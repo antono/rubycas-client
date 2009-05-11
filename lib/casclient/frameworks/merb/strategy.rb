@@ -5,6 +5,7 @@
 # http://rubyforge.org/projects/rubycas-client/
 #
 require 'casclient'
+
 class Merb::Authentication
   module Strategies
     class CAS < Merb::Authentication::Strategy
@@ -14,11 +15,12 @@ class Merb::Authentication
       def run!
         @client ||= Client.new(config)
 
-        service_ticket = read_ticket
+        service_ticket = read_ticket(request)
 
         cas_login_url = @client.add_service_to_login_url(service_url)
 
         last_service_ticket = session[:cas_last_valid_ticket]
+
         if (service_ticket && last_service_ticket && 
             last_service_ticket.ticket == service_ticket.ticket && 
             last_service_ticket.service == service_ticket.service)
@@ -28,9 +30,10 @@ class Merb::Authentication
           # happens to be in the URL.
           log.warn("Reusing previously validated ticket since the new ticket and service are the same.")
           service_ticket = last_service_ticket
-        elsif last_service_ticket &&
-          !config[:authenticate_on_every_request] && 
-          session[@client.username_session_key]
+        elsif last_service_ticket && 
+              !config[:authenticate_on_every_request] && 
+              session[@client.username_session_key]
+
           # Re-use the previous ticket if the user already has a local CAS session (i.e. if they were already
           # previously authenticated for this service). This is to prevent redirection to the CAS server on every
           # request.
@@ -47,10 +50,11 @@ class Merb::Authentication
 
           if service_ticket.is_valid?
             log.info("Ticket #{service_ticket.inspect} for service #{service_ticket.service.inspect} " + 
-                    "belonging to user #{validation_response.user.inspect} is VALID.")
+                     "belonging to user #{validation_response.user.inspect} is VALID.")
 
-            session[@client.username_session_key] = validation_response.user
+            #session[@client.username_session_key] = validation_response.user
             session[@client.extra_attributes_session_key] = validation_response.extra_attributes
+            session.authenticate!
 
             # Store the ticket in the session to avoid re-validating the same service
             # ticket with the CAS server.
@@ -69,17 +73,17 @@ class Merb::Authentication
         end
       end
 
-      def read_ticket
-        ticket = request.params[:ticket]
+      def read_ticket(req)
+        ticket = req.params[:ticket]
 
         return nil unless ticket
 
         log.debug("Request contains ticket #{ticket.inspect}.")
 
         if ticket =~ /^PT-/
-          ProxyTicket.new(ticket, service_url, request.params[:renew])
+          ProxyTicket.new(ticket, service_url, req.params[:renew])
         else
-          ServiceTicket.new(ticket, service_url, request.params[:renew])
+          ServiceTicket.new(ticket, service_url, req.params[:renew])
         end
       end
 
@@ -106,5 +110,4 @@ class Merb::Authentication
 
     end # CAS
   end # Strategies
-end
-
+end # Merb::Auth
